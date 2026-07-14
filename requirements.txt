@@ -1,0 +1,10 @@
+ultralytics
+opencv-python-headless
+torch
+torchvision
+fastapi
+uvicorn
+streamlit
+pillow
+requests
+pydantic
