@@ -1,4 +1,6 @@
+# Ignore datasets and model weights
+datasets/
+runs/
+best.pt
 __pycache__/
 .venv/
-venv/
-*.pt

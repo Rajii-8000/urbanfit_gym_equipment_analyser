@@ -1,0 +1,10 @@
+path: C:/urbanfit/datasets/gym_data  # The root directory
+train: train/images                  # Folder containing training images
+val: val/images                      # Folder containing validation images
+
+names:
+  0: dumbBell
+  1: kettleBell
+  2: pullBar
+  3: benchPress
+  4: treadMill

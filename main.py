@@ -1,85 +1,72 @@
-import io
-from typing import Optional
 from fastapi import FastAPI, UploadFile, File
-from pydantic import BaseModel
-from PIL import Image
 from ultralytics import YOLO
+from PIL import Image
+import io
+import uvicorn
 
 app = FastAPI()
 
-# Load the YOLOv8 model (using the fast, lightweight nano version)
-model = YOLO("yolov8n.pt") 
+# 1. Load your model
+# Ensure 'best.pt' is in the same folder as main.py or update the pa
+model = YOLO('runs/classify/train-3/weights/best.pt')
 
-# Define the response structure (perfectly matched to Streamlit's expectations!)
-class GymAnalysisResult(BaseModel):
-    is_gym_equipment: bool
-    equipment_name: Optional[str] = None
-    confidence_score: Optional[float] = None  # Corrected key!
-    targeted_muscles: list[str] = []
-    recommended_exercises: list[str] = []
-    beginner_workout_plan: str = ""
-
-# Common gym equipment classes from the COCO dataset that YOLOv8 natively recognizes
-GYM_CLASSES = {
-    "sports ball", "baseball bat", "baseball glove", "skateboard", 
-    "surfboard", "tennis racket", "bottle", "dumbbell"
+EXERCISE_MAP = {
+    "benchPress": {
+        "muscles": ["Chest", "Triceps", "Shoulders"],
+        "exercises": ["Flat Bench Press", "Incline Dumbbell Press", "Push-ups"],
+        "plan": "Perform 3 sets of 10 repetitions with a moderate weight."
+    },
+    "dumbell": {
+        "muscles": ["Biceps", "Triceps", "Forearms"],
+        "exercises": ["Bicep Curls", "Hammer Curls", "Dumbbell Rows"],
+        "plan": "3 sets of 12 repetitions per arm."
+    },
+    "kettleBell": {
+        "muscles": ["Core", "Glutes", "Shoulders"],
+        "exercises": ["Kettlebell Swings", "Goblet Squats", "Turkish Get-ups"],
+        "plan": "3 sets of 15 swings focusing on hip hinge form."
+    },
+    "pullBar": {
+        "muscles": ["Back", "Biceps", "Lats"],
+        "exercises": ["Pull-ups", "Chin-ups", "Hanging Leg Raises"],
+        "plan": "Aim for 3 sets of as many reps as possible, or use a resistance band for assistance."
+    },
+    "treadMill": {
+        "muscles": ["Legs", "Cardio"],
+        "exercises": ["Walking", "Jogging", "Interval Sprints"],
+        "plan": "Start with a 5-minute warm-up walk, followed by 10 minutes of light jogging."
+    }
 }
 
-@app.post("/analyze", response_model=GymAnalysisResult)
-async def analyze(file: UploadFile = File(...)):
-    # 1. Read the uploaded image bytes
+@app.post("/analyze")
+async def analyze_image(file: UploadFile = File(...)):
+    # Read the image
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes))
     
-    # 2. Run the YOLOv8 ML model on the image
-    results = model(image)
+    # Run model prediction
+    results = model.predict(image)
     
-    is_gym = False
-    detected_item = None
-    max_conf = 0.0
+    # Get the top prediction
+    # This assumes your model is a classifier. If it's a detector, 
+    # you might need to adjust based on results[0].boxes
+    top_class_index = results[0].probs.top1
+    detected_class = results[0].names[top_class_index]
+    confidence = float(results[0].probs.top1conf)
     
-    # 3. Process the model's predictions
-    for result in results:
-        for box in result.boxes:
-            class_id = int(box.cls[0])
-            label = model.names[class_id]
-            confidence = float(box.conf[0])
-            
-            # Check if the detected item matches any of our gym labels
-            if label in GYM_CLASSES or "dumbbell" in label or "bench" in label:
-                is_gym = True
-                if confidence > max_conf:
-                    max_conf = confidence
-                    detected_item = label
+    # Get info from our map
+    info = EXERCISE_MAP.get(detected_class, {
+        "muscles": ["N/A"], "exercises": ["N/A"], "plan": "Equipment not recognized."
+    })
+    
+    return {
+        "is_gym_equipment": True,
+        "equipment_name": detected_class,
+        "confidence_score": f"{confidence:.2%}",
+        "targeted_muscles": info["muscles"],
+        "recommended_exercises": info["exercises"],
+        "beginner_workout_plan": info["plan"]
+    }
 
-    # 4. Generate the corresponding workout data if gym equipment is found
-    if is_gym:
-        # Clean up the display name (e.g., make 'dumbbell' look nice as 'Dumbbell')
-        equipment_display_name = detected_item.replace("_", " ").title() if detected_item else "Gym Equipment"
-        
-        targeted_muscles = ["Quads", "Hamstrings", "Glutes", "Lower Back", "Core"]
-        recommended_exercises = ["Squats", "Deadlifts", "Barbell Rows", "Lunges"]
-        beginner_workout_plan = (
-            "Perform 3 sets of 8-10 reps of Squats, "
-            "followed by 3 sets of 8 reps of Deadlifts. "
-            "Focus on maintaining a straight back and tight core!"
-        )
-    else:
-        equipment_display_name = "Unknown Gym Equipment"
-        targeted_muscles = []
-        recommended_exercises = []
-        beginner_workout_plan = "No recognizable gym equipment detected. Please upload a clearer photo!"
-
-    # 5. Return the response to Streamlit
-    return GymAnalysisResult(
-        is_gym_equipment=is_gym,
-        equipment_name=equipment_display_name,
-        confidence_score=round(max_conf, 2) if is_gym else None,
-        targeted_muscles=targeted_muscles,
-        recommended_exercises=recommended_exercises,
-        beginner_workout_plan=beginner_workout_plan
-    )
-
-@app.get("/")
-def home():
-    return {"message": "Urbanfit FastAPI Backend is Running!"}
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=8000)
