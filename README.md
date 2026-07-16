@@ -5,5 +5,7 @@ Urbanfit is an AI-powered gym equipment analyzer built with YOLOv8, FastAPI, and
 🛠️ Tech Stack
 
  Frontend: Streamlit
+ 
  Backend: FastAPI
+ 
  Machine Learning: Ultralytics YOLOv8
